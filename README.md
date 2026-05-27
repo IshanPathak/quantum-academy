@@ -2,11 +2,8 @@
 
 A gamified **zero-to-hero** learning platform for **quantum security**. Built with React + Vite.
 
-Complete path: math foundations → Python & simulators → quantum mechanics → algorithms (Shor, Grover) → classical crypto (RSA, AES, ECC, PKI, TLS) → quantum threat & migration → NIST PQC defenses (Kyber, Dilithium, hybrid TLS) → **PQC & cryptanalysis tracks** → hands-on labs → career launch.
-
-**71 topics · 10 levels · 14 games · 10 coding exercises · spaced repetition · dashboard · glossary · search.**
-
-Each topic: **Learn → Do → Play → Exercise (where applicable) → Recall**. Deep-dive sections, key points, flashcards, XP, streaks, progressive unlocks.
+In the app, each topic follows `Learn`, `Do`, `Play`, `Exercise` (if available), then `Recall`.
+Use **Review** for spaced repetition, and **Dashboard** to track XP and export or import your progress.
 
 ---
 
@@ -36,88 +33,36 @@ Open the URL it prints (usually `http://localhost:5173`).
 
 ---
 
-## 📁 Project structure
+## Project overview
 
-```
-quantum-academy/
-└── src/
-    ├── App.jsx
-    ├── data/
-    │   ├── curriculum.js      # Main curriculum + spreads L8 tracks
-    │   ├── l8Tracks.js        # PQC (7) + Cryptanalysis (6) sub-tracks
-    │   └── glossary.js
-    ├── components/
-    │   ├── Topic.jsx          # Learn / Do / Play / Exercise / Recall
-    │   ├── Level.jsx          # Collapsible track sections (L8)
-    │   ├── Review.jsx
-    │   ├── Dashboard.jsx
-    │   ├── SearchBar.jsx
-    │   └── Glossary.jsx
-    ├── games/Games.jsx
-    └── hooks/useProgress.js   # localStorage key: qacad_react_v1
-```
+Source code is in `src/`. The Learn and Exercise flow lives in `src/components/Topic.jsx`, and progress is stored under `qacad_react_v1`.
 
-## ✏️ Customizing
+## Where the content lives
 
-**Topic shape:** `title`, `learn`, optional `deep`, `keyPoints`, `flashcards`, `analogy`, `res`, `steps`, optional `code`, optional `exercise`, optional `game`, `quiz`.
+Topics are defined in `src/data/curriculum.js`. L8 tracks are defined in `src/data/l8Tracks.js`. The glossary is in `src/data/glossary.js`.
 
-**L8 tracks:** set `track: 'pqc' | 'cryptanalysis'` and `trackLabel` on the first topic of a section.
+Games and exercises are embedded inside topics in the Learn flow.
 
-**Exercises:** `exercise: { prompt, starter, tests: [{input, expected}], solution }` — user implements `solve(input)` in JS.
+## Levels at a glance
 
-## 🎮 Games (14)
-
-Vector Plotter · Gate Lab · Quantum Coin · Entanglement · Bloch Sphere · Bra-Ket · Shor Factoring · Attack RSA · LWE Lattice · BB84 · Grover Search · Migration Triage · Hybrid TLS Builder · Entropy Meter
-
-## 📚 Levels
-
-| Level | Focus |
-|-------|--------|
-| 0–4 | Motivation, math, code, quantum mechanics, algorithms |
-| 5 | Classical crypto: RSA, AES, ECC, PKI/TLS, signatures |
-| 6 | Threat: mapping, timelines, resource estimates, CNSA, side channels |
-| 7 | Defenses: NIST PQC, Kyber, Dilithium, hybrid TLS, QKD limits |
-| 8 | **PQC track (7)** + **Cryptanalysis track (6)** + other branches + labs |
-| 9 | Capstone projects, CTFs, career |
+- Levels 0 to 4: foundations (math, code, quantum basics).
+- Level 5: classical crypto (RSA, AES, ECC, PKI, TLS).
+- Level 6: quantum threat and migration planning.
+- Level 7: defenses and NIST post-quantum concepts.
+- Level 8: PQC and cryptanalysis tracks.
+- Level 9: capstones and next steps.
 
 ---
 
-Progress saves in your browser (`localStorage`). Use **Dashboard → Export progress** to back up.
+Progress saves in your browser (`localStorage`). Use Dashboard to export your progress JSON.
 
 ---
 
-## Deploy (GitHub + Netlify)
+## Deploy to Netlify
 
-The repo includes `netlify.toml` (build: `npm run build`, publish: `dist`, SPA redirects).
+This repo includes `netlify.toml`. Netlify builds with `npm run build` and publishes `dist`.
 
-### 1. Push to GitHub
-
-From this folder (git is already initialized with an initial commit):
-
-```powershell
-# Install GitHub CLI if needed: winget install GitHub.cli --source winget
-gh auth login
-
-gh repo create quantum-academy --public --source=. --remote=origin --push
-```
-
-If the repo name is taken, pick another name and use that in the `gh repo create` command.
-
-If you created an empty repo on GitHub manually:
-
-```powershell
-git remote add origin https://github.com/YOUR_USERNAME/quantum-academy.git
-git branch -M main
-git push -u origin main
-```
-
-### 2. Connect Netlify
-
-1. Go to [https://app.netlify.com](https://app.netlify.com) → **Add new site** → **Import an existing project**.
-2. Choose **GitHub** and select `quantum-academy`.
-3. Netlify should read `netlify.toml` automatically. If not, set:
-   - **Build command:** `npm run build`
-   - **Publish directory:** `dist`
-4. Deploy. Your site will get a `*.netlify.app` URL.
-
-On university/corporate networks, set `NODE_OPTIONS=--use-system-ca` in Netlify **Environment variables** if `npm install` fails on SSL.
+1. Push the repo to GitHub.
+2. In Netlify, add a new site and import from Git.
+3. Select the repo. Netlify should detect `netlify.toml`.
+4. If you see SSL issues, set `NODE_OPTIONS=--use-system-ca` in Netlify environment variables.
