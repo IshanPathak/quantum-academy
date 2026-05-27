@@ -83,3 +83,41 @@ Vector Plotter · Gate Lab · Quantum Coin · Entanglement · Bloch Sphere · Br
 ---
 
 Progress saves in your browser (`localStorage`). Use **Dashboard → Export progress** to back up.
+
+---
+
+## Deploy (GitHub + Netlify)
+
+The repo includes `netlify.toml` (build: `npm run build`, publish: `dist`, SPA redirects).
+
+### 1. Push to GitHub
+
+From this folder (git is already initialized with an initial commit):
+
+```powershell
+# Install GitHub CLI if needed: winget install GitHub.cli --source winget
+gh auth login
+
+gh repo create quantum-academy --public --source=. --remote=origin --push
+```
+
+If the repo name is taken, pick another name and use that in the `gh repo create` command.
+
+If you created an empty repo on GitHub manually:
+
+```powershell
+git remote add origin https://github.com/YOUR_USERNAME/quantum-academy.git
+git branch -M main
+git push -u origin main
+```
+
+### 2. Connect Netlify
+
+1. Go to [https://app.netlify.com](https://app.netlify.com) → **Add new site** → **Import an existing project**.
+2. Choose **GitHub** and select `quantum-academy`.
+3. Netlify should read `netlify.toml` automatically. If not, set:
+   - **Build command:** `npm run build`
+   - **Publish directory:** `dist`
+4. Deploy. Your site will get a `*.netlify.app` URL.
+
+On university/corporate networks, set `NODE_OPTIONS=--use-system-ca` in Netlify **Environment variables** if `npm install` fails on SSL.
