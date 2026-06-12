@@ -45,7 +45,7 @@ export default function SearchBar({ onJump }) {
     <div className="search-wrap" ref={ref}>
       <input
         className="search-input"
-        placeholder="Search topics…"
+        placeholder="Search topics"
         value={q}
         onChange={e => { setQ(e.target.value); setOpen(true) }}
         onFocus={() => setOpen(true)}

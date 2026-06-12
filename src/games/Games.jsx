@@ -1,318 +1,880 @@
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect, useCallback } from 'react'
+import GameShell from './GameShell.jsx'
+import { drawPlotGrid, pixelToGrid, GRID_SIZE } from '../utils/plotGrid.js'
 
 const k = 1 / Math.sqrt(2)
+const VECTOR_TARGETS = [[3, 2], [2, -1], [-1, 3], [0, 2], [-2, -1]]
+const ROUNDS = 5
+
+function ModeToggle({ mode, setMode }) {
+  return (
+    <div className="game-mode-toggle">
+      <button type="button" className={'btn-ghost btn-sm' + (mode === 'challenge' ? ' active' : '')} onClick={() => setMode('challenge')}>Challenge</button>
+      <button type="button" className={'btn-ghost btn-sm' + (mode === 'free' ? ' active' : '')} onClick={() => setMode('free')}>Free play</button>
+    </div>
+  )
+}
 
 /* ---- Vector Plotter ---- */
-function VectorGame() {
+function VectorGame({ onWin }) {
   const canvasRef = useRef(null)
+  const [mode, setMode] = useState('challenge')
   const [vec, setVec] = useState(null)
+  const targets = VECTOR_TARGETS.slice(0, ROUNDS)
+  const [round, setRound] = useState(0)
+  const [score, setScore] = useState(0)
+  const [feedback, setFeedback] = useState(null)
+  const [complete, setComplete] = useState(false)
+  const target = targets[round]
 
-  const draw = (vx, vy) => {
+  const redraw = useCallback((vx, vy) => {
     const c = canvasRef.current
     if (!c) return
-    const ctx = c.getContext('2d')
-    ctx.clearRect(0, 0, 280, 280)
-    ctx.strokeStyle = '#1c1c3a'; ctx.lineWidth = 1
-    for (let i = 0; i <= 280; i += 28) {
-      ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, 280); ctx.stroke()
-      ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(280, i); ctx.stroke()
-    }
-    ctx.strokeStyle = '#3a3a6a'; ctx.lineWidth = 1.5
-    ctx.beginPath(); ctx.moveTo(140, 0); ctx.lineTo(140, 280); ctx.stroke()
-    ctx.beginPath(); ctx.moveTo(0, 140); ctx.lineTo(280, 140); ctx.stroke()
-    if (vx !== undefined) {
-      const ex = 140 + vx * 28, ey = 140 - vy * 28
-      ctx.strokeStyle = '#22d3ee'; ctx.fillStyle = '#22d3ee'; ctx.lineWidth = 3
-      ctx.beginPath(); ctx.moveTo(140, 140); ctx.lineTo(ex, ey); ctx.stroke()
-      ctx.beginPath(); ctx.arc(ex, ey, 5, 0, 7); ctx.fill()
-    }
+    drawPlotGrid(c.getContext('2d'), vx !== undefined ? { vx, vy } : null)
+  }, [])
+
+  useEffect(() => {
+    redraw()
+  }, [round, mode, redraw])
+
+  const finish = (finalScore) => {
+    setComplete(true)
+    onWin && onWin({ score: finalScore, total: ROUNDS })
   }
-  useEffect(() => { draw() }, [])
 
   const onClick = (e) => {
     const c = canvasRef.current
     const r = c.getBoundingClientRect()
-    const px = (e.clientX - r.left) * (280 / r.width)
-    const py = (e.clientY - r.top) * (280 / r.height)
-    const vx = Math.round((px - 140) / 28), vy = Math.round((140 - py) / 28)
-    draw(vx, vy); setVec([vx, vy])
+    const px = (e.clientX - r.left) * (GRID_SIZE / r.width)
+    const py = (e.clientY - r.top) * (GRID_SIZE / r.height)
+    const { vx, vy } = pixelToGrid(px, py)
+    redraw(vx, vy)
+    setVec([vx, vy])
+    if (mode === 'free' || complete) return
+    const ok = vx === target[0] && vy === target[1]
+    if (ok) {
+      const ns = score + 1
+      setFeedback({ ok: true, text: 'Correct [' + target[0] + ', ' + target[1] + ']' })
+      setTimeout(() => {
+        if (round + 1 >= ROUNDS) finish(ns)
+        else {
+          setRound((r) => r + 1)
+          setFeedback(null)
+          setScore(ns)
+          setVec(null)
+          redraw()
+        }
+      }, 600)
+    } else {
+      setFeedback({ ok: false, text: 'Target was [' + target[0] + ', ' + target[1] + ']. You plotted [' + vx + ', ' + vy + '].' })
+    }
+  }
+
+  if (mode === 'free') {
+    return (
+      <div className="game">
+        <div className="game-title">Vector plotter</div>
+        <ModeToggle mode={mode} setMode={setMode} />
+        <p className="game-hint">Tap the grid to place a vector from the origin.</p>
+        <canvas ref={canvasRef} className="vec-grid" width={GRID_SIZE} height={GRID_SIZE} onClick={onClick} />
+        <div className="vec-readout mono">{vec ? 'vector = [' + vec[0] + ', ' + vec[1] + ']' : 'Click the grid'}</div>
+      </div>
+    )
   }
 
   return (
-    <div className="game">
-      <div className="game-title">🎮 Vector Plotter</div>
-      <div className="game-hint">Tap the grid to drop a vector from center. Watch [x,y] update.</div>
-      <canvas ref={canvasRef} className="vec-grid" width="280" height="280" onClick={onClick} />
-      <div className="vec-readout">{vec ? `vector = [${vec[0]}, ${vec[1]}]` : 'tap the grid →'}</div>
-    </div>
+    <GameShell
+      title="Vector plotter"
+      objective={'Plot 5 target vectors on the grid as fast as you can.'}
+      round={round}
+      totalRounds={ROUNDS}
+      score={score}
+      feedback={feedback}
+      complete={complete}
+      finalScore={score}
+      onPlayAgain={() => { setRound(0); setScore(0); setFeedback(null); setComplete(false); setVec(null); redraw() }}
+      onDone={() => finish(score)}
+      modeToggle={<ModeToggle mode={mode} setMode={setMode} />}
+    >
+      <p className="mono game-target">Target: [{target[0]}, {target[1]}]</p>
+      <canvas ref={canvasRef} className="vec-grid" width={GRID_SIZE} height={GRID_SIZE} onClick={onClick} />
+    </GameShell>
   )
 }
 
-/* ---- Gate Lab ---- */
+const GATE_ROUNDS = [
+  { start: [1, 0], gate: 'X', prompt: 'Flip |0⟩ to |1⟩' },
+  { start: [0, 1], gate: 'X', prompt: 'Flip |1⟩ to |0⟩' },
+  { start: [1, 0], gate: 'H', prompt: 'Create equal superposition from |0⟩' },
+  { start: [1, 0], gate: 'Z', prompt: 'Apply phase flip on |0⟩ (Z gate)' },
+  { start: [0, 1], gate: 'H', prompt: 'Superpose from |1⟩' }
+]
+
 function GateGame({ onWin }) {
+  const [mode, setMode] = useState('challenge')
   const [s, setS] = useState([1, 0])
-  const [msg, setMsg] = useState('Tap a gate')
+  const [round, setRound] = useState(0)
+  const [score, setScore] = useState(0)
+  const [feedback, setFeedback] = useState(null)
+  const [complete, setComplete] = useState(false)
+  const cur = GATE_ROUNDS[round % GATE_ROUNDS.length]
   const fmt = (v) => Math.abs(v) < 0.01 ? '0' : (Math.abs(v - Math.round(v)) < 0.01 ? String(Math.round(v)) : v.toFixed(2))
-  const label = (st) => {
-    if (Math.abs(st[0] - 1) < 0.01 && Math.abs(st[1]) < 0.01) return '|0⟩ = '
-    if (Math.abs(st[1] - 1) < 0.01 && Math.abs(st[0]) < 0.01) return '|1⟩ = '
-    return ''
-  }
+
+  useEffect(() => {
+    if (mode === 'challenge' && !complete) setS(cur.start)
+  }, [round, mode, complete, cur.start])
+
   const apply = (g) => {
-    let n
+    let n = s
     if (g === 'X') n = [s[1], s[0]]
     if (g === 'H') n = [k * (s[0] + s[1]), k * (s[0] - s[1])]
     if (g === 'Z') n = [s[0], -s[1]]
     setS(n)
-    setMsg(`${g} → P(0)=${(n[0] * n[0] * 100).toFixed(0)}% P(1)=${(n[1] * n[1] * 100).toFixed(0)}%`)
+    if (mode === 'free') return
+    const ok = g === cur.gate
+    if (ok) {
+      const ns = score + 1
+      setFeedback({ ok: true, text: cur.gate + ' is correct. ' + cur.prompt })
+      setTimeout(() => {
+        if (round + 1 >= GATE_ROUNDS.length) {
+          setComplete(true)
+          onWin && onWin({ score: ns, total: GATE_ROUNDS.length })
+        } else {
+          setRound((r) => r + 1)
+          setScore(ns)
+          setFeedback(null)
+        }
+      }, 700)
+    } else {
+      setFeedback({ ok: false, text: 'Needed ' + cur.gate + ' for: ' + cur.prompt })
+    }
   }
-  return (
-    <div className="game">
-      <div className="game-title">🎮 Gate Lab</div>
-      <div className="game-hint">Tap a gate, watch the qubit state change live.</div>
-      <div className="gate-game">
-        <div className="gate-prompt">State: <span className="state">{label(s)}[{fmt(s[0])}, {fmt(s[1])}]</span></div>
+
+  if (mode === 'free') {
+    return (
+      <div className="game">
+        <div className="game-title">Gate lab</div>
+        <ModeToggle mode={mode} setMode={setMode} />
+        <div className="gate-prompt">State: <span className="state mono">[{fmt(s[0])}, {fmt(s[1])}]</span></div>
         <div className="gate-buttons">
-          <div className="gate-btn" onClick={() => apply('X')}><div className="g-sym">X</div><div className="g-name">flip</div></div>
-          <div className="gate-btn" onClick={() => apply('H')}><div className="g-sym">H</div><div className="g-name">superpose</div></div>
-          <div className="gate-btn" onClick={() => apply('Z')}><div className="g-sym">Z</div><div className="g-name">phase</div></div>
+          <button type="button" className="gate-btn" onClick={() => apply('X')}><div className="g-sym">X</div></button>
+          <button type="button" className="gate-btn" onClick={() => apply('H')}><div className="g-sym">H</div></button>
+          <button type="button" className="gate-btn" onClick={() => apply('Z')}><div className="g-sym">Z</div></button>
         </div>
-        <div className="game-score">{msg}</div>
-        <button className="btn-action" style={{ display: 'block', margin: '10px auto 0' }} onClick={() => { setS([1, 0]); setMsg('Reset') }}>↺ Reset</button>
+        <button type="button" className="btn-ghost btn-sm" onClick={() => setS([1, 0])}>Reset to |0⟩</button>
       </div>
-    </div>
+    )
+  }
+
+  return (
+    <GameShell
+      title="Gate lab"
+      objective="Pick the single gate that matches each prompt."
+      round={round}
+      totalRounds={GATE_ROUNDS.length}
+      score={score}
+      feedback={feedback}
+      complete={complete}
+      finalScore={score}
+      onPlayAgain={() => { setRound(0); setScore(0); setComplete(false); setFeedback(null); setS(GATE_ROUNDS[0].start) }}
+      onDone={() => onWin && onWin({ score, total: GATE_ROUNDS.length })}
+      modeToggle={<ModeToggle mode={mode} setMode={setMode} />}
+    >
+      <div className="gate-prompt">{cur.prompt}<br /><span className="mono">Start [{fmt(cur.start[0])}, {fmt(cur.start[1])}]</span></div>
+      <div className="gate-buttons">
+        <button type="button" className="gate-btn" onClick={() => apply('X')}><div className="g-sym">X</div></button>
+        <button type="button" className="gate-btn" onClick={() => apply('H')}><div className="g-sym">H</div></button>
+        <button type="button" className="gate-btn" onClick={() => apply('Z')}><div className="g-sym">Z</div></button>
+      </div>
+    </GameShell>
   )
 }
 
-/* ---- Quantum Coin ---- */
-function CoinGame() {
-  const [t, setT] = useState({ z: 0, o: 0 })
-  const [face, setFace] = useState('?')
-  const [spin, setSpin] = useState(false)
-  const flip = (n) => {
-    setSpin(true)
+const COIN_STATES = [
+  { a: 0.6, b: 0.8, favor: '1' },
+  { a: 1, b: 0, favor: '0' },
+  { a: 0.5, b: 0.5, favor: 'tie' },
+  { a: 0.8, b: 0.6, favor: '0' },
+  { a: 0.707, b: 0.707, favor: 'tie' }
+]
+
+function CoinGame({ onWin }) {
+  const [round, setRound] = useState(0)
+  const [score, setScore] = useState(0)
+  const [feedback, setFeedback] = useState(null)
+  const [complete, setComplete] = useState(false)
+  const cur = COIN_STATES[round % COIN_STATES.length]
+  const p0 = (cur.a * cur.a).toFixed(2)
+  const p1 = (cur.b * cur.b).toFixed(2)
+
+  const guess = (bit) => {
+    if (complete) return
+    let ok = false
+    if (cur.favor === 'tie') ok = true
+    else ok = bit === cur.favor
+    const ns = score + (ok ? 1 : 0)
+    setFeedback({
+      ok,
+      text: ok
+        ? 'P(0)=' + p0 + ', P(1)=' + p1 + '. ' + (cur.favor === 'tie' ? 'Equal odds (either answer works).' : 'Higher for |' + cur.favor + '⟩.')
+        : 'P(0)=' + p0 + ', P(1)=' + p1 + '. ' + (cur.favor === 'tie' ? 'Equal odds.' : 'More likely |' + cur.favor + '⟩.')
+    })
     setTimeout(() => {
-      setSpin(false)
-      let z = 0, o = 0
-      for (let i = 0; i < n; i++) Math.random() < 0.5 ? z++ : o++
-      setT(p => ({ z: p.z + z, o: p.o + o }))
-      setFace(Math.random() < 0.5 ? '0' : '1')
-    }, n > 1 ? 300 : 200)
+      if (round + 1 >= COIN_STATES.length) {
+        setComplete(true)
+        onWin && onWin({ score: ns, total: COIN_STATES.length })
+      } else {
+        setRound((r) => r + 1)
+        setScore(ns)
+        setFeedback(null)
+      }
+    }, 900)
   }
+
   return (
-    <div className="game">
-      <div className="game-title">🎮 Quantum Coin</div>
-      <div className="game-hint">Superposition = spinning coin, 50/50 until measured. Flip many times.</div>
-      <div className="coin-stage">
-        <div className={'coin' + (spin ? ' spinning' : '')} style={{ borderColor: face === '1' ? '#f472b6' : '#22d3ee' }}>{face}</div>
-        <button className="btn-action" onClick={() => flip(1)}>Measure ×1</button>
-        <button className="btn-action" onClick={() => flip(100)}>Measure ×100</button>
-        <div className="tally">
-          <div className="t0"><div className="big">{t.z}</div><div className="lbl">got 0</div></div>
-          <div className="t1"><div className="big">{t.o}</div><div className="lbl">got 1</div></div>
-        </div>
+    <GameShell
+      title="Quantum coin"
+      objective="5 rounds: given amplitudes [α, β], predict which measurement outcome is more likely."
+      round={round}
+      totalRounds={COIN_STATES.length}
+      score={score}
+      feedback={feedback}
+      complete={complete}
+      finalScore={score}
+      onPlayAgain={() => { setRound(0); setScore(0); setComplete(false); setFeedback(null) }}
+      onDone={() => onWin && onWin({ score, total: COIN_STATES.length })}
+    >
+      <p className="mono game-target">Qubit state [α, β] = [{cur.a}, {cur.b}]</p>
+      <p className="game-hint">Use the Born rule: compare α² and β².</p>
+      <div className="tf-row">
+        <button type="button" className="btn-action" onClick={() => guess('0')}>More likely |0⟩</button>
+        <button type="button" className="btn-action" onClick={() => guess('1')}>More likely |1⟩</button>
       </div>
-    </div>
+    </GameShell>
   )
 }
 
 /* ---- Entanglement ---- */
-function EntangleGame() {
-  const [val, setVal] = useState(null)
-  const open = () => { if (val === null) setVal(Math.random() < 0.5 ? 0 : 1) }
-  const reset = () => setVal(null)
-  const cls = val === 0 ? 'zero' : val === 1 ? 'one' : ''
+function EntangleGame({ onWin }) {
+  const [round, setRound] = useState(0)
+  const [score, setScore] = useState(0)
+  const [secret, setSecret] = useState(() => (Math.random() < 0.5 ? 0 : 1))
+  const [opened, setOpened] = useState(false)
+  const [feedback, setFeedback] = useState(null)
+  const [complete, setComplete] = useState(false)
+  const total = 5
+
+  const predict = (bit) => {
+    if (opened || complete) return
+    setOpened(true)
+    const ok = bit === secret
+    const ns = score + (ok ? 1 : 0)
+    setFeedback({
+      ok,
+      text: ok
+        ? 'Both boxes show ' + secret + '. Entangled pair: opening one fixes the other.'
+        : 'Both boxes show ' + secret + '. You predicted ' + bit + ', but the pair was ' + secret + '.'
+    })
+    setTimeout(() => {
+      if (round + 1 >= total) {
+        setComplete(true)
+        onWin && onWin({ score: ns, total })
+      } else {
+        setRound((r) => r + 1)
+        setScore(ns)
+        setSecret(Math.random() < 0.5 ? 0 : 1)
+        setOpened(false)
+        setFeedback(null)
+      }
+    }, 1000)
+  }
+
   return (
-    <div className="game">
-      <div className="game-title">🎮 Entanglement Boxes</div>
-      <div className="game-hint">Open ONE box — the other instantly matches. Always.</div>
+    <GameShell
+      title="Entanglement boxes"
+      objective="Before opening a box, predict what value both boxes will show (0 or 1)."
+      round={round}
+      totalRounds={total}
+      score={score}
+      feedback={feedback}
+      complete={complete}
+      finalScore={score}
+      onPlayAgain={() => {
+        setRound(0)
+        setScore(0)
+        setComplete(false)
+        setOpened(false)
+        setFeedback(null)
+        setSecret(Math.random() < 0.5 ? 0 : 1)
+      }}
+      onDone={() => onWin && onWin({ score, total })}
+    >
       <div className="ent-boxes">
-        <div className={'ent-box ' + (val !== null ? 'opened ' + cls : '')} onClick={open}>{val !== null ? val : '📦'}<span className="ent-label">Qubit A</span></div>
-        <div className={'ent-box ' + (val !== null ? 'opened ' + cls : '')} onClick={open}>{val !== null ? val : '📦'}<span className="ent-label">Qubit B</span></div>
+        <div className={'ent-box' + (opened ? ' opened' : '')}>{opened ? secret : '?'}</div>
+        <div className={'ent-box' + (opened ? ' opened' : '')}>{opened ? secret : '?'}</div>
       </div>
-      <div className="game-score">{val !== null ? `Both = ${val}. Perfectly correlated! ✓` : 'Tap either box'}</div>
-      <button className="btn-action" style={{ display: 'block', margin: '10px auto 0' }} onClick={reset}>↺ New pair</button>
-    </div>
+      {!opened && (
+        <div className="tf-row">
+          <button type="button" className="btn-action" onClick={() => predict(0)}>Predict 0</button>
+          <button type="button" className="btn-action" onClick={() => predict(1)}>Predict 1</button>
+        </div>
+      )}
+    </GameShell>
   )
 }
 
 /* ---- Factor / RSA (shared) ---- */
-function FactorGame({ targets, title, hint, winMsg, onWin }) {
-  const [target, setTarget] = useState(targets[0])
-  const [a, setA] = useState(''); const [b, setB] = useState('')
-  const [score, setScore] = useState({ text: '', good: false })
+function FactorGame({ targets, title, objective, winMsg, onWin }) {
+  const pool = targets.slice(0, ROUNDS)
+  const [round, setRound] = useState(0)
+  const [target, setTarget] = useState(pool[0])
+  const [a, setA] = useState('')
+  const [b, setB] = useState('')
+  const [score, setScore] = useState(0)
+  const [feedback, setFeedback] = useState(null)
+  const [complete, setComplete] = useState(false)
+
   const check = () => {
-    const na = +a, nb = +b
-    if (na * nb === target && na > 1 && nb > 1) { setScore({ text: winMsg(na, nb, target), good: true }); onWin && onWin() }
-    else setScore({ text: `✗ ${na}×${nb}=${na * nb}, not ${target}.`, good: false })
+    if (complete) return
+    const na = +a
+    const nb = +b
+    if (na * nb === target && na > 1 && nb > 1) {
+      const ns = score + 1
+      setFeedback({ ok: true, text: winMsg(na, nb, target) })
+      setTimeout(() => {
+        if (round + 1 >= ROUNDS) {
+          setComplete(true)
+          onWin && onWin({ score: ns, total: ROUNDS })
+        } else {
+          setRound((r) => r + 1)
+          setTarget(pool[(round + 1) % pool.length])
+          setScore(ns)
+          setA('')
+          setB('')
+          setFeedback(null)
+        }
+      }, 800)
+    } else {
+      setFeedback({ ok: false, text: 'Not quite. ' + na + '×' + nb + '=' + (na * nb) + ', not ' + target + '.' })
+    }
   }
-  const next = () => { setTarget(targets[Math.floor(Math.random() * targets.length)]); setA(''); setB(''); setScore({ text: '', good: false }) }
+
   return (
-    <div className="game">
-      <div className="game-title">{title}</div>
-      <div className="game-hint">{hint}</div>
+    <GameShell
+      title={title}
+      objective={objective}
+      round={round}
+      totalRounds={ROUNDS}
+      score={score}
+      feedback={feedback}
+      complete={complete}
+      finalScore={score}
+      onPlayAgain={() => {
+        setRound(0)
+        setTarget(pool[0])
+        setScore(0)
+        setComplete(false)
+        setA('')
+        setB('')
+        setFeedback(null)
+      }}
+      onDone={() => onWin && onWin({ score, total: ROUNDS })}
+    >
       <div className="factor-game">
         <div className="factor-num">{target}</div>
         <div className="factor-input">
-          <input type="number" value={a} onChange={e => setA(e.target.value)} placeholder="?" />
+          <input type="number" value={a} onChange={(e) => setA(e.target.value)} placeholder="?" />
           <span>×</span>
-          <input type="number" value={b} onChange={e => setB(e.target.value)} placeholder="?" />
+          <input type="number" value={b} onChange={(e) => setB(e.target.value)} placeholder="?" />
         </div>
-        <button className="btn-action" onClick={check}>Check</button>
-        <button className="btn-action" onClick={next}>New</button>
-        <div className="game-score" style={{ color: score.good ? '#a3e635' : '#f472b6' }}>{score.text}</div>
+        <button type="button" className="btn-action" onClick={check}>Check factors</button>
       </div>
-    </div>
+    </GameShell>
   )
 }
 
-/* ---- Bra-Ket ---- */
-function BraketGame() {
+const BRAKET_ROUNDS = [
+  { target: '1', label: 'Build |1⟩' },
+  { target: '0', label: 'Build |0⟩' },
+  { target: '+', label: 'Build |+⟩' },
+  { target: '1', label: 'Vector [0, 1]' },
+  { target: '0', label: 'Vector [1, 0]' }
+]
+
+function BraketGame({ onWin }) {
+  const [mode, setMode] = useState('challenge')
   const [state, setState] = useState({ s: '|0⟩', v: '= [1, 0]' })
-  const set = (w) => {
+  const [round, setRound] = useState(0)
+  const [score, setScore] = useState(0)
+  const [feedback, setFeedback] = useState(null)
+  const [complete, setComplete] = useState(false)
+  const cur = BRAKET_ROUNDS[round % BRAKET_ROUNDS.length]
+
+  const pick = (w) => {
     if (w === '0') setState({ s: '|0⟩', v: '= [1, 0]' })
     if (w === '1') setState({ s: '|1⟩', v: '= [0, 1]' })
-    if (w === '+') setState({ s: '|+⟩ = (|0⟩+|1⟩)/√2', v: '= [0.707, 0.707]' })
+    if (w === '+') setState({ s: '|+⟩', v: '= [0.707, 0.707]' })
+    if (mode === 'free') return
+    const ok = w === cur.target
+    const ns = score + (ok ? 1 : 0)
+    setFeedback({ ok, text: ok ? cur.label + ' matched.' : 'Needed ' + cur.label })
+    setTimeout(() => {
+      if (round + 1 >= BRAKET_ROUNDS.length) {
+        setComplete(true)
+        onWin && onWin({ score: ns, total: BRAKET_ROUNDS.length })
+      } else {
+        setRound((r) => r + 1)
+        setScore(ns)
+        setFeedback(null)
+      }
+    }, 700)
   }
-  return (
-    <div className="game">
-      <div className="game-title">🎮 Bra-Ket Builder</div>
-      <div className="game-hint">Tap to build a state and see its vector form.</div>
-      <div className="gate-game">
-        <div className="gate-prompt"><span className="state">{state.s}</span><br /><span style={{ fontSize: '13px', color: 'var(--muted)' }}>{state.v}</span></div>
+
+  if (mode === 'free') {
+    return (
+      <div className="game">
+        <div className="game-title">Bra-ket builder</div>
+        <ModeToggle mode={mode} setMode={setMode} />
+        <div className="gate-prompt"><span className="state">{state.s}</span><span className="mono">{state.v}</span></div>
         <div className="gate-buttons">
-          <div className="gate-btn" onClick={() => set('0')}><div className="g-sym">|0⟩</div></div>
-          <div className="gate-btn" onClick={() => set('1')}><div className="g-sym">|1⟩</div></div>
-          <div className="gate-btn" onClick={() => set('+')}><div className="g-sym">|+⟩</div><div className="g-name">superpos</div></div>
+          <button type="button" className="gate-btn" onClick={() => pick('0')}><div className="g-sym">|0⟩</div></button>
+          <button type="button" className="gate-btn" onClick={() => pick('1')}><div className="g-sym">|1⟩</div></button>
+          <button type="button" className="gate-btn" onClick={() => pick('+')}><div className="g-sym">|+⟩</div></button>
         </div>
       </div>
-    </div>
+    )
+  }
+
+  return (
+    <GameShell
+      title="Bra-ket builder"
+      objective="Tap the ket that matches each prompt."
+      round={round}
+      totalRounds={BRAKET_ROUNDS.length}
+      score={score}
+      feedback={feedback}
+      complete={complete}
+      finalScore={score}
+      onPlayAgain={() => { setRound(0); setScore(0); setComplete(false); setFeedback(null) }}
+      onDone={() => onWin && onWin({ score, total: BRAKET_ROUNDS.length })}
+      modeToggle={<ModeToggle mode={mode} setMode={setMode} />}
+    >
+      <p className="game-target">{cur.label}</p>
+      <div className="gate-buttons">
+        <button type="button" className="gate-btn" onClick={() => pick('0')}><div className="g-sym">|0⟩</div></button>
+        <button type="button" className="gate-btn" onClick={() => pick('1')}><div className="g-sym">|1⟩</div></button>
+        <button type="button" className="gate-btn" onClick={() => pick('+')}><div className="g-sym">|+⟩</div></button>
+      </div>
+    </GameShell>
   )
 }
 
-/* ---- Bloch Sphere ---- */
-function BlochGame() {
-  const canvasRef = useRef(null)
-  const stateRef = useRef({ theta: 0, phi: 0, rotX: -0.3 })
-  const [readout, setReadout] = useState('|0⟩ at north pole')
+const BLOCH_ROUNDS = [
+  { gate: 'X', init: 0, check: (s) => Math.abs(s.theta - Math.PI) < 0.2, prompt: 'Start at |0⟩. Apply the gate that moves to |1⟩ (south).' },
+  { gate: 'X', init: Math.PI, check: (s) => Math.abs(s.theta) < 0.2, prompt: 'Start at |1⟩. Apply the gate that returns to |0⟩ (north).' },
+  { gate: 'H', init: 0, check: (s) => Math.abs(s.theta - Math.PI / 2) < 0.2, prompt: 'From |0⟩, apply the gate that creates equal superposition (equator).' },
+  { gate: 'H', init: Math.PI / 2, check: (s) => Math.abs(s.theta) < 0.2, prompt: 'From the equator, apply H to return toward |0⟩.' },
+  { gate: 'Z', init: Math.PI / 2, check: (s) => Math.abs(s.theta - Math.PI / 2) < 0.2 && Math.abs(s.phi - Math.PI) < 0.3, prompt: 'On the equator, apply Z to add a π phase (point stays on equator).' }
+]
 
-  const draw = () => {
-    const c = canvasRef.current; if (!c) return
-    const ctx = c.getContext('2d'); const s = stateRef.current
+function BlochCanvas({ stateRef, onGate }) {
+  const canvasRef = useRef(null)
+  const draw = useCallback(() => {
+    const c = canvasRef.current
+    if (!c) return
+    const ctx = c.getContext('2d')
+    const s = stateRef.current
     ctx.clearRect(0, 0, 280, 280)
-    const cx = 140, cy = 140, R = 90
-    ctx.strokeStyle = '#2a2a55'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(cx, cy, R, 0, 7); ctx.stroke()
-    ctx.strokeStyle = '#1c1c3a'; ctx.beginPath(); ctx.ellipse(cx, cy, R, R * Math.abs(Math.sin(s.rotX)), 0, 0, 7); ctx.stroke()
-    ctx.fillStyle = '#5a5a85'; ctx.font = '11px monospace'; ctx.fillText('|0⟩', cx - 9, cy - R - 6); ctx.fillText('|1⟩', cx - 9, cy + R + 16)
-    const th = s.theta, ph = s.phi
-    let x = Math.sin(th) * Math.cos(ph), y = Math.sin(th) * Math.sin(ph), z = Math.cos(th)
-    const ry = s.rotX; let z2 = y * Math.sin(ry) + z * Math.cos(ry)
-    const px = cx + x * R, py = cy - z2 * R
-    ctx.strokeStyle = '#c084fc'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(px, py); ctx.stroke()
-    ctx.fillStyle = '#c084fc'; ctx.shadowColor = '#c084fc'; ctx.shadowBlur = 12
-    ctx.beginPath(); ctx.arc(px, py, 6, 0, 7); ctx.fill(); ctx.shadowBlur = 0
-  }
+    const cx = 140
+    const cy = 140
+    const R = 90
+    ctx.strokeStyle = '#2a2a55'
+    ctx.lineWidth = 1.5
+    ctx.beginPath()
+    ctx.arc(cx, cy, R, 0, 7)
+    ctx.stroke()
+    ctx.strokeStyle = '#1c1c3a'
+    ctx.beginPath()
+    ctx.ellipse(cx, cy, R, R * Math.abs(Math.sin(s.rotX)), 0, 0, 7)
+    ctx.stroke()
+    ctx.fillStyle = '#5a5a85'
+    ctx.font = '11px monospace'
+    ctx.fillText('|0⟩', cx - 9, cy - R - 6)
+    ctx.fillText('|1⟩', cx - 9, cy + R + 16)
+    const th = s.theta
+    const ph = s.phi
+    const x = Math.sin(th) * Math.cos(ph)
+    const y = Math.sin(th) * Math.sin(ph)
+    const z = Math.cos(th)
+    const ry = s.rotX
+    const z2 = y * Math.sin(ry) + z * Math.cos(ry)
+    const px = cx + x * R
+    const py = cy - z2 * R
+    ctx.strokeStyle = '#c084fc'
+    ctx.lineWidth = 2.5
+    ctx.beginPath()
+    ctx.moveTo(cx, cy)
+    ctx.lineTo(px, py)
+    ctx.stroke()
+    ctx.fillStyle = '#c084fc'
+    ctx.beginPath()
+    ctx.arc(px, py, 6, 0, 7)
+    ctx.fill()
+  }, [stateRef])
+
   useEffect(() => {
     draw()
     const c = canvasRef.current
-    let dragging = false, ly
-    const down = e => { dragging = true; ly = e.clientY }
-    const move = e => { if (!dragging) return; stateRef.current.rotX += (e.clientY - ly) * 0.01; ly = e.clientY; draw() }
+    let dragging = false
+    let ly = 0
+    const down = (e) => { dragging = true; ly = e.clientY }
+    const move = (e) => {
+      if (!dragging) return
+      stateRef.current.rotX += (e.clientY - ly) * 0.01
+      ly = e.clientY
+      draw()
+    }
     const up = () => { dragging = false }
     c.addEventListener('pointerdown', down)
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', up)
-    return () => { c.removeEventListener('pointerdown', down); window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up) }
-  }, [])
+    return () => {
+      c.removeEventListener('pointerdown', down)
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+    }
+  }, [draw, stateRef])
+
   const gate = (g) => {
     const s = stateRef.current
     if (g === 'X') s.theta = Math.PI - s.theta
     if (g === 'H') s.theta = Math.abs(s.theta) < 0.1 ? Math.PI / 2 : 0
     if (g === 'Z') s.phi += Math.PI
     draw()
-    const lbl = Math.abs(s.theta) < 0.1 ? '|0⟩ (north)' : Math.abs(s.theta - Math.PI) < 0.1 ? '|1⟩ (south)' : 'superposition (equator)'
-    setReadout(`${g} applied → ${lbl}`)
+    onGate && onGate(g)
   }
+
   return (
-    <div className="game">
-      <div className="game-title">🎮 Bloch Sphere</div>
-      <div className="game-hint">Drag to rotate. Tap gates to move the qubit's point.</div>
+    <>
       <canvas ref={canvasRef} className="vec-grid" width="280" height="280" style={{ cursor: 'grab' }} />
-      <div className="gate-buttons" style={{ marginTop: '10px' }}>
-        <div className="gate-btn" onClick={() => gate('X')}><div className="g-sym">X</div></div>
-        <div className="gate-btn" onClick={() => gate('H')}><div className="g-sym">H</div></div>
-        <div className="gate-btn" onClick={() => gate('Z')}><div className="g-sym">Z</div></div>
+      <div className="gate-buttons" style={{ marginTop: 'var(--space-3)' }}>
+        <button type="button" className="gate-btn" onClick={() => gate('X')}><div className="g-sym">X</div></button>
+        <button type="button" className="gate-btn" onClick={() => gate('H')}><div className="g-sym">H</div></button>
+        <button type="button" className="gate-btn" onClick={() => gate('Z')}><div className="g-sym">Z</div></button>
       </div>
-      <div className="vec-readout">{readout}</div>
-    </div>
+    </>
   )
+}
+
+function BlochGame({ onWin }) {
+  const [mode, setMode] = useState('challenge')
+  const stateRef = useRef({ theta: 0, phi: 0, rotX: -0.3 })
+  const [readout, setReadout] = useState('|0⟩ at north pole')
+  const [round, setRound] = useState(0)
+  const [score, setScore] = useState(0)
+  const [feedback, setFeedback] = useState(null)
+  const [complete, setComplete] = useState(false)
+  const cur = BLOCH_ROUNDS[round % BLOCH_ROUNDS.length]
+
+  const resetState = (theta) => {
+    stateRef.current.theta = theta
+    stateRef.current.phi = 0
+  }
+
+  useEffect(() => {
+    if (mode === 'challenge' && !complete) resetState(cur.init)
+  }, [round, mode, complete, cur.init])
+
+  const onGate = (g) => {
+    const s = stateRef.current
+    const lbl = Math.abs(s.theta) < 0.15 ? '|0⟩ (north)' : Math.abs(s.theta - Math.PI) < 0.15 ? '|1⟩ (south)' : 'superposition (equator)'
+    setReadout(g + ' applied → ' + lbl)
+    if (mode === 'free' || complete) return
+    const ok = g === cur.gate && cur.check(s)
+    if (ok) {
+      const ns = score + 1
+      setFeedback({ ok: true, text: 'Correct. ' + cur.prompt })
+      setTimeout(() => {
+        if (round + 1 >= BLOCH_ROUNDS.length) {
+          setComplete(true)
+          onWin && onWin({ score: ns, total: BLOCH_ROUNDS.length })
+        } else {
+          setRound((r) => r + 1)
+          setScore(ns)
+          setFeedback(null)
+        }
+      }, 700)
+    } else {
+      setFeedback({ ok: false, text: 'Not quite. ' + cur.prompt })
+    }
+  }
+
+  if (mode === 'free') {
+    return (
+      <div className="game">
+        <div className="game-title">Bloch sphere</div>
+        <ModeToggle mode={mode} setMode={setMode} />
+        <p className="game-hint">Drag to rotate. Tap gates to move the qubit point.</p>
+        <BlochCanvas stateRef={stateRef} onGate={onGate} />
+        <div className="vec-readout">{readout}</div>
+      </div>
+    )
+  }
+
+  return (
+    <GameShell
+      title="Bloch sphere"
+      objective="Apply the right single-qubit gate for each target state on the Bloch sphere."
+      round={round}
+      totalRounds={BLOCH_ROUNDS.length}
+      score={score}
+      feedback={feedback}
+      complete={complete}
+      finalScore={score}
+      onPlayAgain={() => {
+        setRound(0)
+        setScore(0)
+        setComplete(false)
+        setFeedback(null)
+        resetState(0)
+      }}
+      onDone={() => onWin && onWin({ score, total: BLOCH_ROUNDS.length })}
+      modeToggle={<ModeToggle mode={mode} setMode={setMode} />}
+    >
+      <p className="game-target">{cur.prompt}</p>
+      <BlochCanvas stateRef={stateRef} onGate={onGate} />
+      <div className="vec-readout">{readout}</div>
+    </GameShell>
+  )
+}
+
+function genLattice() {
+  const s = Math.floor(Math.random() * 7)
+  const a = 2 + Math.floor(Math.random() * 4)
+  const noise = Math.random() < 0.5 ? 0 : 1
+  return { s, a, res: (a * s + noise) % 7 }
 }
 
 /* ---- LWE Lattice ---- */
 function LatticeGame({ onWin }) {
-  const [puzzle, setPuzzle] = useState(() => gen())
+  const [round, setRound] = useState(0)
+  const [puzzle, setPuzzle] = useState(() => genLattice())
   const [guess, setGuess] = useState('')
-  const [score, setScore] = useState({ text: '', good: false })
-  function gen() { const s = Math.floor(Math.random() * 7), a = 2 + Math.floor(Math.random() * 4), noise = Math.random() < 0.5 ? 0 : 1; return { s, a, res: (a * s + noise) % 7 } }
+  const [score, setScore] = useState(0)
+  const [feedback, setFeedback] = useState(null)
+  const [complete, setComplete] = useState(false)
+
   const check = () => {
-    if (+guess === puzzle.s) { setScore({ text: `✓ Secret was ${puzzle.s}! Easy for tiny numbers — but with 256-dimensional lattices, no quantum computer can do this.`, good: true }); onWin && onWin() }
-    else setScore({ text: `✗ Try again. Hint: ${puzzle.a}·s should be near ${puzzle.res} mod 7.`, good: false })
+    if (complete) return
+    if (+guess === puzzle.s) {
+      const ns = score + 1
+      setFeedback({
+        ok: true,
+        text: 'Correct. Secret s=' + puzzle.s + '. Tiny LWE is easy; 256-dimensional lattices stay hard even for quantum computers.'
+      })
+      setTimeout(() => {
+        if (round + 1 >= ROUNDS) {
+          setComplete(true)
+          onWin && onWin({ score: ns, total: ROUNDS })
+        } else {
+          setRound((r) => r + 1)
+          setScore(ns)
+          setPuzzle(genLattice())
+          setGuess('')
+          setFeedback(null)
+        }
+      }, 800)
+    } else {
+      setFeedback({ ok: false, text: 'Not quite. Hint: ' + puzzle.a + '·s should be near ' + puzzle.res + ' mod 7.' })
+    }
   }
+
   return (
-    <div className="game">
-      <div className="game-title">🎮 Lattice Puzzle (LWE)</div>
-      <div className="game-hint">LWE hides a secret in noisy equations. Guess the secret s. Quantum can't solve big versions!</div>
+    <GameShell
+      title="Lattice Puzzle (LWE)"
+      objective="Guess the secret s in five noisy modular equations (toy LWE)."
+      round={round}
+      totalRounds={ROUNDS}
+      score={score}
+      feedback={feedback}
+      complete={complete}
+      finalScore={score}
+      onPlayAgain={() => {
+        setRound(0)
+        setScore(0)
+        setComplete(false)
+        setPuzzle(genLattice())
+        setGuess('')
+        setFeedback(null)
+      }}
+      onDone={() => onWin && onWin({ score, total: ROUNDS })}
+    >
       <div className="factor-game">
-        <div>{puzzle.a}·s + small_noise ≈ {puzzle.res} (mod 7)</div>
-        <div className="factor-input"><input type="number" value={guess} onChange={e => setGuess(e.target.value)} placeholder="s=?" /></div>
-        <button className="btn-action" onClick={check}>Guess</button>
-        <button className="btn-action" onClick={() => { setPuzzle(gen()); setGuess(''); setScore({ text: '', good: false }) }}>New puzzle</button>
-        <div className="game-score" style={{ color: score.good ? '#a3e635' : '#f472b6' }}>{score.text}</div>
+        <div className="mono">{puzzle.a}·s + small_noise ≈ {puzzle.res} (mod 7)</div>
+        <div className="factor-input">
+          <input type="number" value={guess} onChange={(e) => setGuess(e.target.value)} placeholder="s=?" />
+        </div>
+        <button type="button" className="btn-action" onClick={check}>Guess s</button>
       </div>
-    </div>
+    </GameShell>
   )
 }
+
+const BB84_ROUNDS = [
+  { spy: false, err: 2 },
+  { spy: true, err: 24 },
+  { spy: false, err: 1 },
+  { spy: true, err: 22 },
+  { spy: false, err: 0 }
+]
 
 /* ---- BB84 ---- */
 function BB84Game({ onWin }) {
-  const [score, setScore] = useState({ text: 'Send photons to measure error rate', good: null })
-  const send = (spy) => {
-    const err = spy ? (20 + Math.floor(Math.random() * 8)) : Math.floor(Math.random() * 3)
-    if (spy) setScore({ text: `🕵️ Error rate: ${err}% — HIGH! Eavesdropper detected, key discarded.`, good: false })
-    else { setScore({ text: `Error rate: ${err}% — low. Safe! Key accepted. ✓`, good: true }); onWin && onWin() }
+  const [round, setRound] = useState(0)
+  const [score, setScore] = useState(0)
+  const [feedback, setFeedback] = useState(null)
+  const [complete, setComplete] = useState(false)
+  const cur = BB84_ROUNDS[round % BB84_ROUNDS.length]
+  const err = cur.err + (round % 2)
+
+  const judge = (compromised) => {
+    if (complete) return
+    const shouldCompromise = cur.spy
+    const ok = compromised === shouldCompromise
+    const ns = score + (ok ? 1 : 0)
+    setFeedback({
+      ok,
+      text: ok
+        ? (shouldCompromise
+          ? 'Correct. Error rate ' + err + '% is high; eavesdropper detected, key discarded.'
+          : 'Correct. Error rate ' + err + '% is low; key accepted.')
+        : (shouldCompromise
+          ? 'Not quite. Error rate ' + err + '% is high because someone was measuring the channel.'
+          : 'Not quite. Error rate ' + err + '% is low; treat the key as safe.')
+    })
+    setTimeout(() => {
+      if (round + 1 >= BB84_ROUNDS.length) {
+        setComplete(true)
+        onWin && onWin({ score: ns, total: BB84_ROUNDS.length })
+      } else {
+        setRound((r) => r + 1)
+        setScore(ns)
+        setFeedback(null)
+      }
+    }, 900)
   }
+
   return (
-    <div className="game">
-      <div className="game-title">🎮 BB84 Eavesdrop Detector</div>
-      <div className="game-hint">Send photons. Toggle the eavesdropper — watch the error rate spike when someone's listening.</div>
-      <div className="factor-game">
-        <button className="btn-action" onClick={() => send(false)}>Send (no spy)</button>
-        <button className="btn-action" onClick={() => send(true)}>Send (with spy 🕵️)</button>
-        <div className="game-score" style={{ marginTop: '14px', color: score.good === false ? '#f472b6' : '#a3e635' }}>{score.text}</div>
+    <GameShell
+      title="BB84 Eavesdrop Detector"
+      objective="After each simulated photon batch, decide if the key is safe or compromised from the error rate."
+      round={round}
+      totalRounds={BB84_ROUNDS.length}
+      score={score}
+      feedback={feedback}
+      complete={complete}
+      finalScore={score}
+      onPlayAgain={() => {
+        setRound(0)
+        setScore(0)
+        setComplete(false)
+        setFeedback(null)
+      }}
+      onDone={() => onWin && onWin({ score, total: BB84_ROUNDS.length })}
+    >
+      <p className="mono game-target">Measured error rate: {err}%</p>
+      <p className="game-hint">Is this key safe to use or compromised?</p>
+      <div className="tf-row">
+        <button type="button" className="btn-action" onClick={() => judge(false)}>Key safe (low error)</button>
+        <button type="button" className="btn-action" onClick={() => judge(true)}>Key compromised (high error)</button>
       </div>
-    </div>
+    </GameShell>
   )
 }
 
+const GROVER_ROUNDS = [
+  { n: 64, answer: 'grover' },
+  { n: 256, answer: 'grover' },
+  { n: 1024, answer: 'grover' },
+  { n: 4096, answer: 'grover' },
+  { n: 16384, answer: 'grover' }
+]
+
 /* ---- Grover Search ---- */
-function GroverGame() {
+function GroverGame({ onWin }) {
+  const [mode, setMode] = useState('challenge')
+  const [round, setRound] = useState(0)
+  const [score, setScore] = useState(0)
+  const [feedback, setFeedback] = useState(null)
+  const [complete, setComplete] = useState(false)
   const [n, setN] = useState(256)
-  const classical = n
-  const grover = Math.round(Math.sqrt(n))
-  return (
-    <div className="game">
-      <div className="game-title">🎮 Grover's Search</div>
-      <div className="game-hint">Classical search checks every item. Grover needs only √N — that's why AES key sizes must double.</div>
-      <div className="factor-game">
-        <div>Database size: <b>{n}</b> items</div>
-        <input type="range" min="16" max="65536" step="16" value={n} onChange={e => setN(+e.target.value)} style={{ width: '100%', margin: '12px 0' }} />
-        <div className="grover-compare">
-          <div><span className="lbl">Classical tries</span><span className="big t0">{classical.toLocaleString()}</span></div>
-          <div><span className="lbl">Grover tries (√N)</span><span className="big t1">{grover.toLocaleString()}</span></div>
+  const cur = GROVER_ROUNDS[round % GROVER_ROUNDS.length]
+  const classical = cur.n
+  const grover = Math.round(Math.sqrt(cur.n))
+
+  const pick = (which) => {
+    if (complete) return
+    const ok = which === cur.answer
+    const ns = score + (ok ? 1 : 0)
+    setFeedback({
+      ok,
+      text: ok
+        ? 'Correct. Grover needs about √N ≈ ' + grover + ' queries vs ' + classical + ' classically.'
+        : 'Not quite. For N=' + cur.n + ', Grover uses √N ≈ ' + grover + ' tries, not N.'
+    })
+    setTimeout(() => {
+      if (round + 1 >= GROVER_ROUNDS.length) {
+        setComplete(true)
+        onWin && onWin({ score: ns, total: GROVER_ROUNDS.length })
+      } else {
+        setRound((r) => r + 1)
+        setScore(ns)
+        setFeedback(null)
+      }
+    }, 900)
+  }
+
+  if (mode === 'free') {
+    const classicalFree = n
+    const groverFree = Math.round(Math.sqrt(n))
+    return (
+      <div className="game">
+        <div className="game-title">Grover&apos;s Search</div>
+        <ModeToggle mode={mode} setMode={setMode} />
+        <p className="game-hint">Classical search checks every item. Grover needs only √N. That is why AES key sizes must double.</p>
+        <div className="factor-game">
+          <div>Database size: <b>{n}</b> items</div>
+          <input type="range" min="16" max="65536" step="16" value={n} onChange={(e) => setN(+e.target.value)} style={{ width: '100%', margin: 'var(--space-3) 0' }} />
+          <div className="grover-compare">
+            <div><span className="lbl">Classical tries</span><span className="big t0">{classicalFree.toLocaleString()}</span></div>
+            <div><span className="lbl">Grover tries (√N)</span><span className="big t1">{groverFree.toLocaleString()}</span></div>
+          </div>
+          <p className="game-hint">AES-{n <= 256 ? '128' : '256'} under Grover ≈ {Math.log2(groverFree).toFixed(1)}-bit effective security. Prefer AES-256.</p>
         </div>
-        <div className="game-score">AES-{n <= 256 ? '128' : '256'} under Grover ≈ {Math.log2(grover)}-bit effective security — use AES-256.</div>
       </div>
-    </div>
+    )
+  }
+
+  return (
+    <GameShell
+      title="Grover&apos;s Search"
+      objective="Five rounds: pick which search strategy needs fewer queries for the given database size N."
+      round={round}
+      totalRounds={GROVER_ROUNDS.length}
+      score={score}
+      feedback={feedback}
+      complete={complete}
+      finalScore={score}
+      onPlayAgain={() => { setRound(0); setScore(0); setComplete(false); setFeedback(null) }}
+      onDone={() => onWin && onWin({ score, total: GROVER_ROUNDS.length })}
+      modeToggle={<ModeToggle mode={mode} setMode={setMode} />}
+    >
+      <p className="mono game-target">N = {cur.n} items</p>
+      <div className="tf-row">
+        <button type="button" className="btn-action" onClick={() => pick('classical')}>Classical (~N)</button>
+        <button type="button" className="btn-action" onClick={() => pick('grover')}>Grover (~√N)</button>
+      </div>
+    </GameShell>
   )
 }
 
@@ -322,35 +884,58 @@ const TRIAGE_ITEMS = [
   { id: 'ecc', label: 'ECDH key exchange (P-256)', bucket: 'replace' },
   { id: 'aes128', label: 'AES-128 disk encryption', bucket: 'strengthen' },
   { id: 'aes256', label: 'AES-256 VPN tunnel', bucket: 'ok' },
-  { id: 'sha256', label: 'SHA-256 integrity (no collision attack)', bucket: 'ok' },
-  { id: 'dh', label: 'Legacy DH parameters (1024-bit)', bucket: 'replace' },
+  { id: 'sha256', label: 'SHA-256 integrity (no collision attack)', bucket: 'ok' }
 ]
+
 function TriageGame({ onWin }) {
-  const [assign, setAssign] = useState({})
-  const [msg, setMsg] = useState('Assign each system to the right migration priority.')
-  const set = (id, bucket) => setAssign(a => ({ ...a, [id]: bucket }))
-  const check = () => {
-    const ok = TRIAGE_ITEMS.every(i => assign[i.id] === i.bucket)
-    if (ok) { setMsg('✓ Perfect triage! Replace asymmetric first, strengthen symmetric, keep strong configs.'); onWin && onWin() }
-    else setMsg('✗ Prioritize: RSA/ECC/DH → Replace now. AES-128 → Strengthen. AES-256/SHA-256 → OK for now.')
+  const [round, setRound] = useState(0)
+  const [score, setScore] = useState(0)
+  const [feedback, setFeedback] = useState(null)
+  const [complete, setComplete] = useState(false)
+  const item = TRIAGE_ITEMS[round % TRIAGE_ITEMS.length]
+
+  const assign = (bucket) => {
+    if (complete) return
+    const ok = bucket === item.bucket
+    const ns = score + (ok ? 1 : 0)
+    setFeedback({
+      ok,
+      text: ok
+        ? 'Correct. ' + item.label + ' → ' + bucket + '.'
+        : 'Not quite. Shor breaks asymmetric first; Grover only weakens symmetric. ' + item.label + ' should be ' + item.bucket + '.'
+    })
+    setTimeout(() => {
+      if (round + 1 >= TRIAGE_ITEMS.length) {
+        setComplete(true)
+        onWin && onWin({ score: ns, total: TRIAGE_ITEMS.length })
+      } else {
+        setRound((r) => r + 1)
+        setScore(ns)
+        setFeedback(null)
+      }
+    }, 900)
   }
+
   return (
-    <div className="game">
-      <div className="game-title">🎮 Migration Triage</div>
-      <div className="game-hint">Shor breaks asymmetric crypto first. Grover only weakens symmetric — prioritize replacements correctly.</div>
-      {TRIAGE_ITEMS.map(i => (
-        <div key={i.id} className="triage-row">
-          <span>{i.label}</span>
-          <div className="triage-btns">
-            {['replace', 'strengthen', 'ok'].map(b => (
-              <button key={b} type="button" className={'btn-action' + (assign[i.id] === b ? ' active' : '')} onClick={() => set(i.id, b)}>{b}</button>
-            ))}
-          </div>
-        </div>
-      ))}
-      <button className="btn-action" onClick={check}>Check triage</button>
-      <div className="game-score">{msg}</div>
-    </div>
+    <GameShell
+      title="Migration Triage"
+      objective="Assign each system to replace now, strengthen, or OK for now (5 systems)."
+      round={round}
+      totalRounds={TRIAGE_ITEMS.length}
+      score={score}
+      feedback={feedback}
+      complete={complete}
+      finalScore={score}
+      onPlayAgain={() => { setRound(0); setScore(0); setComplete(false); setFeedback(null) }}
+      onDone={() => onWin && onWin({ score, total: TRIAGE_ITEMS.length })}
+    >
+      <p className="game-target">{item.label}</p>
+      <div className="triage-btns" style={{ justifyContent: 'center' }}>
+        {['replace', 'strengthen', 'ok'].map((b) => (
+          <button key={b} type="button" className="btn-action" onClick={() => assign(b)}>{b}</button>
+        ))}
+      </div>
+    </GameShell>
   )
 }
 
@@ -360,35 +945,63 @@ const HYBRID_PAIRS = [
   { classical: 'RSA-2048', pqc: 'ML-KEM-768 (Kyber)', ok: false },
   { classical: 'X25519', pqc: 'ML-DSA-65 (Dilithium)', ok: false },
   { classical: 'ECDHE P-256', pqc: 'ML-KEM-768 (Kyber)', ok: true },
+  { classical: 'RSA-4096', pqc: 'ML-DSA-65 (Dilithium)', ok: false }
 ]
+
 function HybridGame({ onWin }) {
-  const [idx, setIdx] = useState(0)
-  const [score, setScore] = useState({ text: 'Is this a valid hybrid key-exchange pair for TLS migration?', good: null })
-  const pair = HYBRID_PAIRS[idx % HYBRID_PAIRS.length]
+  const [round, setRound] = useState(0)
+  const [score, setScore] = useState(0)
+  const [feedback, setFeedback] = useState(null)
+  const [complete, setComplete] = useState(false)
+  const pair = HYBRID_PAIRS[round % HYBRID_PAIRS.length]
+
   const answer = (yes) => {
+    if (complete) return
     const right = yes === pair.ok
-    setScore({
+    const ns = score + (right ? 1 : 0)
+    setFeedback({
+      ok: right,
       text: right
-        ? (pair.ok ? '✓ Yes — classical ECDH/X25519 + Kyber KEM is the industry hybrid pattern.' : '✓ Correct — that pairing is wrong (signatures ≠ KEM, or weak classical leg).')
-        : '✗ Hybrid TLS uses a classical key exchange PLUS a PQC KEM (Kyber), not signatures for key exchange.',
-      good: right
+        ? (pair.ok
+          ? 'Correct. Classical ECDH/X25519 plus Kyber KEM is the industry hybrid pattern.'
+          : 'Correct. That pairing is invalid (signatures are not KEMs, or the classical leg is wrong).')
+        : 'Not quite. Hybrid TLS combines a classical key exchange with a PQC KEM (Kyber), not signatures for key exchange.'
     })
-    if (right) onWin && onWin()
-    setTimeout(() => setIdx(i => i + 1), 1200)
+    setTimeout(() => {
+      if (round + 1 >= HYBRID_PAIRS.length) {
+        setComplete(true)
+        onWin && onWin({ score: ns, total: HYBRID_PAIRS.length })
+      } else {
+        setRound((r) => r + 1)
+        setScore(ns)
+        setFeedback(null)
+      }
+    }, 900)
   }
+
   return (
-    <div className="game">
-      <div className="game-title">🎮 Hybrid TLS Builder</div>
-      <div className="game-hint">During migration, combine a proven classical algorithm with a PQC KEM for defense in depth.</div>
+    <GameShell
+      title="Hybrid TLS Builder"
+      objective="Judge five classical + PQC pairs: valid hybrid key exchange or not?"
+      round={round}
+      totalRounds={HYBRID_PAIRS.length}
+      score={score}
+      feedback={feedback}
+      complete={complete}
+      finalScore={score}
+      onPlayAgain={() => { setRound(0); setScore(0); setComplete(false); setFeedback(null) }}
+      onDone={() => onWin && onWin({ score, total: HYBRID_PAIRS.length })}
+    >
       <div className="hybrid-pair">
         <div>{pair.classical}</div>
         <div className="hybrid-plus">+</div>
         <div>{pair.pqc}</div>
       </div>
-      <button className="btn-action" onClick={() => answer(true)}>Valid hybrid ✓</button>
-      <button className="btn-action" onClick={() => answer(false)}>Invalid ✗</button>
-      <div className="game-score" style={{ color: score.good ? '#a3e635' : score.good === false ? '#f472b6' : 'var(--muted)' }}>{score.text}</div>
-    </div>
+      <div className="tf-row">
+        <button type="button" className="btn-action" onClick={() => answer(true)}>Valid hybrid</button>
+        <button type="button" className="btn-action" onClick={() => answer(false)}>Invalid</button>
+      </div>
+    </GameShell>
   )
 }
 
@@ -398,47 +1011,77 @@ const ENTROPY_SAMPLES = [
   { label: 'a8f#K2!mQ9@xL4pZ7', bits: 10, weak: false },
   { label: '00000000', bits: 0, weak: true },
   { label: 'QRNG output (256 bits)', bits: 10, weak: false },
+  { label: 'TrulyRandom2024!xK9', bits: 10, weak: false }
 ]
-function EntropyGame() {
-  const [i, setI] = useState(0)
-  const s = ENTROPY_SAMPLES[i % ENTROPY_SAMPLES.length]
-  const [msg, setMsg] = useState('Rate the entropy of this key material.')
+function EntropyGame({ onWin }) {
+  const [round, setRound] = useState(0)
+  const [score, setScore] = useState(0)
+  const [feedback, setFeedback] = useState(null)
+  const [complete, setComplete] = useState(false)
+  const total = ENTROPY_SAMPLES.length
+  const s = ENTROPY_SAMPLES[round % total]
+
   const rate = (weak) => {
-    const right = weak === s.weak
-    setMsg(right
-      ? (s.weak ? '✓ Weak — predictable patterns = low entropy. Never use for real keys.' : '✓ Strong — high entropy, suitable for cryptographic keys (especially with QRNG).')
-      : '✗ Re-read: entropy = unpredictability. Patterns and repetition = weak.')
-    setTimeout(() => { setI(x => x + 1); setMsg('Rate the entropy of this key material.') }, 1400)
+    if (complete) return
+    const ok = weak === s.weak
+    const ns = score + (ok ? 1 : 0)
+    setFeedback({
+      ok,
+      text: ok
+        ? (s.weak ? 'Weak: predictable patterns mean low entropy.' : 'Strong: high unpredictability, good for keys.')
+        : 'Entropy measures guessability. Patterns and repetition are weak.'
+    })
+    setTimeout(() => {
+      if (round + 1 >= total) {
+        setComplete(true)
+        onWin && onWin({ score: ns, total })
+      } else {
+        setRound((r) => r + 1)
+        setScore(ns)
+        setFeedback(null)
+      }
+    }, 900)
   }
+
   return (
-    <div className="game">
-      <div className="game-title">🎮 Entropy Meter</div>
-      <div className="game-hint">Every key starts with randomness. Weak entropy = breakable keys even with perfect algorithms.</div>
+    <GameShell
+      title="Entropy meter"
+      objective="Rate 5 key samples as weak or strong entropy."
+      round={round}
+      totalRounds={total}
+      score={score}
+      feedback={feedback}
+      complete={complete}
+      finalScore={score}
+      onPlayAgain={() => { setRound(0); setScore(0); setComplete(false); setFeedback(null) }}
+      onDone={() => onWin && onWin({ score, total })}
+    >
       <div className="entropy-sample">{s.label}</div>
-      <button className="btn-action" onClick={() => rate(true)}>Weak entropy</button>
-      <button className="btn-action" onClick={() => rate(false)}>Strong entropy</button>
-      <div className="game-score">{msg}</div>
-    </div>
+      <div className="tf-row">
+        <button type="button" className="btn-action" onClick={() => rate(true)}>Weak entropy</button>
+        <button type="button" className="btn-action" onClick={() => rate(false)}>Strong entropy</button>
+      </div>
+    </GameShell>
   )
 }
 
 /* ---- Dispatcher ---- */
 export default function Game({ type, onWin }) {
   switch (type) {
-    case 'vector': return <VectorGame />
+    case 'vector': return <VectorGame onWin={onWin} />
     case 'gate': return <GateGame onWin={onWin} />
-    case 'coin': return <CoinGame />
-    case 'entangle': return <EntangleGame />
-    case 'factor': return <FactorGame targets={[15, 21, 35, 33, 77, 91]} title="🎮 Be Shor's Algorithm" hint="Find two factors. Shor does this for 600-digit numbers — breaking RSA." winMsg={(a, b, t) => `✓ ${a}×${b}=${t}! You did what Shor's does — RSA broken.`} onWin={onWin} />
-    case 'rsa': return <FactorGame targets={[35, 77, 143, 221, 323]} title="🎮 Attack RSA" hint="RSA's public number N is the product of two secret primes. Find them to crack the key." winMsg={(a, b, t) => `✓ Cracked! ${a}×${b}=${t}. Private key exposed — the quantum threat.`} onWin={onWin} />
-    case 'braket': return <BraketGame />
-    case 'bloch': return <BlochGame />
+    case 'coin': return <CoinGame onWin={onWin} />
+    case 'entangle': return <EntangleGame onWin={onWin} />
+    case 'factor': return <FactorGame targets={[15, 21, 35, 33, 77, 91]} title="Be Shor's Algorithm" objective="Factor five composite numbers the way Shor's algorithm would (toy sizes)." winMsg={(a, b, t) => 'Correct. ' + a + '×' + b + '=' + t + '. That is what Shor does to break RSA.'} onWin={onWin} />
+    case 'rsa': return <FactorGame targets={[35, 77, 143, 221, 323]} title="Attack RSA" objective="Find the two prime factors of N for five RSA-style public moduli." winMsg={(a, b, t) => 'Cracked. ' + a + '×' + b + '=' + t + '. Private key exposed.'} onWin={onWin} />
+    case 'braket': return <BraketGame onWin={onWin} />
+    case 'bloch': return <BlochGame onWin={onWin} />
     case 'lattice': return <LatticeGame onWin={onWin} />
     case 'bb84': return <BB84Game onWin={onWin} />
-    case 'grover': return <GroverGame />
+    case 'grover': return <GroverGame onWin={onWin} />
     case 'triage': return <TriageGame onWin={onWin} />
     case 'hybrid': return <HybridGame onWin={onWin} />
-    case 'entropy': return <EntropyGame />
+    case 'entropy': return <EntropyGame onWin={onWin} />
     default: return null
   }
 }

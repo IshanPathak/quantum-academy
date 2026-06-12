@@ -61,7 +61,7 @@ export default function Review({ reviewState, onRate, onXP }) {
   return (
     <div className="review">
       <div className="review-head">
-        <div className="review-title">🔁 Review</div>
+        <div className="review-title">Review</div>
         <div className="review-sub">{dueCards.length} due</div>
       </div>
 

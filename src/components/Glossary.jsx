@@ -16,7 +16,7 @@ export default function Glossary({ open, onClose }) {
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal glossary-modal" onClick={e => e.stopPropagation()}>
         <div className="modal-head">
-          <h2>📚 Glossary</h2>
+          <h2>Glossary</h2>
           <button type="button" className="modal-close" onClick={onClose}>✕</button>
         </div>
         <input

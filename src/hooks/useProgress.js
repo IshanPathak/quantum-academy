@@ -16,19 +16,23 @@ function loadState() {
         exercises: parsed.exercises || {},
         review: parsed.review || {},
         settings: {
-          particles: parsed.settings?.particles !== false,
+          particles: parsed.settings?.particles === true,
           sound: parsed.settings?.sound === true
         },
         onboardingDone: !!parsed.onboardingDone,
-        celebratedLevels: parsed.celebratedLevels || {}
+        celebratedLevels: parsed.celebratedLevels || {},
+        loops: parsed.loops || {},
+        exerciseAttempts: parsed.exerciseAttempts || 0
       }
     }
   } catch (e) { /* ignore */ }
   return {
     done: {}, xp: 0, streak: 0, games: {}, exercises: {}, review: {},
-    settings: { particles: true, sound: false },
+    settings: { particles: false, sound: false },
     onboardingDone: false,
-    celebratedLevels: {}
+    celebratedLevels: {},
+    loops: {},
+    exerciseAttempts: 0
   }
 }
 
@@ -61,9 +65,11 @@ export function useProgress() {
     if (!confirm('Reset ALL progress (topics, XP, review, exercises)? This cannot be undone.')) return
     setState((prev) => ({
       done: {}, xp: 0, streak: 0, games: {}, exercises: {}, review: {},
-      settings: prev.settings || { particles: true, sound: false },
+      settings: prev.settings || { particles: false, sound: false },
       onboardingDone: prev.onboardingDone,
-      celebratedLevels: {}
+      celebratedLevels: {},
+      loops: {},
+      exerciseAttempts: 0
     }))
   }, [])
 
@@ -77,13 +83,61 @@ export function useProgress() {
       exercises: obj.exercises || {},
       review: obj.review || {},
       settings: {
-        particles: obj.settings?.particles !== false,
+        particles: obj.settings?.particles === true,
         sound: obj.settings?.sound === true
       },
       onboardingDone: !!obj.onboardingDone,
-      celebratedLevels: obj.celebratedLevels || {}
+      celebratedLevels: obj.celebratedLevels || {},
+      loops: obj.loops || {},
+      exerciseAttempts: obj.exerciseAttempts || 0
     })
     return true
+  }, [])
+
+  const markLoop = useCallback((topicId, part) => {
+    setState((prev) => ({
+      ...prev,
+      loops: {
+        ...prev.loops,
+        [topicId]: { ...prev.loops?.[topicId], [part]: true }
+      }
+    }))
+  }, [])
+
+  const markRecallPass = useCallback((topicId, correct, total) => {
+    const ratio = total ? correct / total : 0
+    setState((prev) => {
+      const cards = { ...(prev.review?.cards || {}) }
+      const now = Date.now()
+      const baseDays = ratio >= 0.8 ? 3 : ratio >= 0.6 ? 1 : 0
+      const due = now + baseDays * 24 * 60 * 60 * 1000
+      const qid = 'quiz:' + topicId
+      cards[qid] = {
+        reps: 1,
+        intervalDays: baseDays || 1,
+        ease: ratio >= 0.8 ? 2.6 : 2.3,
+        due,
+        lastRatedAt: now,
+        lastRating: ratio >= 0.8 ? 'good' : 'hard'
+      }
+      return {
+        ...prev,
+        loops: {
+          ...prev.loops,
+          [topicId]: {
+            ...prev.loops?.[topicId],
+            recall: true,
+            recallScore: correct,
+            recallTotal: total
+          }
+        },
+        review: { ...prev.review, cards }
+      }
+    })
+  }, [])
+
+  const bumpExerciseAttempts = useCallback(() => {
+    setState((prev) => ({ ...prev, exerciseAttempts: (prev.exerciseAttempts || 0) + 1 }))
   }, [])
 
   const setSettings = useCallback((patch) => {
@@ -187,6 +241,7 @@ export function useProgress() {
 
   return {
     state, toggleTopic, addXP, reset, importState, recordGame, passExercise, rateReview,
-    isUnlocked, levelProgress, totals, setSettings, completeOnboarding, celebrateLevel
+    isUnlocked, levelProgress, totals, setSettings, completeOnboarding, celebrateLevel,
+    markLoop, markRecallPass, bumpExerciseAttempts
   }
 }

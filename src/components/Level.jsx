@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useEffect } from 'react'
 import Topic from './Topic.jsx'
+import { LevelIcon, IconLock } from './Icons.jsx'
 
 function groupByTrack(topics) {
   const groups = []
@@ -64,7 +65,7 @@ export default function Level({ lv, data, unlocked, progress, doneMap, onToggle,
     <div className={'level lv-' + data.color + (open && unlocked ? ' open' : '') + (!unlocked ? ' locked' : '')}>
       <div className="level-card">
         <div className="level-head" onClick={() => unlocked && setOpen(o => !o)}>
-          <div className="level-icon">{data.icon}</div>
+          <div className="level-icon"><LevelIcon name={data.icon} /></div>
           <div className="level-meta">
             <div className="level-tag">{data.tag}</div>
             <div className="level-name">{data.name}</div>
@@ -91,7 +92,7 @@ export default function Level({ lv, data, unlocked, progress, doneMap, onToggle,
                 })
               : (
                 <div className="lock-msg">
-                  <span className="lock-icon" aria-hidden="true">🔒</span>
+                  <span className="lock-icon" aria-hidden="true"><IconLock /></span>
                   <p>Finish every topic in the previous level to unlock <b>{data.name}</b>.</p>
                   <p className="lock-hint">Complete topics in order. Each level builds on the last.</p>
                 </div>

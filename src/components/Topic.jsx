@@ -1,6 +1,9 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState, useCallback } from 'react'
 import Game from '../games/Games.jsx'
 import ResourceCards from './ResourceCards.jsx'
+import DoActivity from './DoActivity.jsx'
+import RecallPanel from './RecallPanel.jsx'
+import ExercisePanel from './ExercisePanel.jsx'
 
 function normalizeOut(x) {
   if (x === null || x === undefined) return ''
@@ -45,52 +48,76 @@ export default function Topic({
   onGameWin,
   onExercisePass,
   registerRef,
-  onFeedback
+  onFeedback,
+  embedded = false,
+  loopProgress,
+  onMarkDo,
+  onMarkPlay,
+  onRecallPass,
+  exercisePassed,
+  exerciseAttempts,
+  onBumpExerciseAttempt,
+  onTryAutoComplete,
+  nextTopicLabel,
+  onGoNextTopic,
+  onMarkLearn
 }) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(embedded)
   const [tab, setTab] = useState('learn')
-  const [answered, setAnswered] = useState(null)
+  const [showManualComplete, setShowManualComplete] = useState(false)
 
   const hasGame = !!topic.game
   const hasExercise = !!topic.exercise
+  const loop = loopProgress || {}
+  const learnDone = !!loop.learn
+  const doDone = !!loop.do
+  const playDone = !!loop.play || !hasGame
+  const exDone = !!exercisePassed || !hasExercise
+  const recallDone = !!loop.recall
+  const autoReady = learnDone && doDone && playDone && exDone && recallDone
 
   const [code, setCode] = useState(topic.exercise?.starter || '')
   const [running, setRunning] = useState(false)
   const [cases, setCases] = useState([])
-  const [passed, setPassed] = useState(false)
+  const [passed, setPassed] = useState(!!exercisePassed)
   const [failCount, setFailCount] = useState(0)
-  const [hintsOpen, setHintsOpen] = useState(false)
+  const [hintsRevealed, setHintsRevealed] = useState(0)
   const [showSolution, setShowSolution] = useState(false)
-
-  useEffect(() => {
-    if (!open) return
-    if (!hasExercise) return
-    setCode(topic.exercise?.starter || '')
-    setCases([])
-    setPassed(false)
-    setFailCount(0)
-    setHintsOpen(false)
-    setShowSolution(false)
-  }, [open, hasExercise, topic.exercise?.starter])
-
-  const testCases = useMemo(() => topic.exercise?.tests || [], [topic.exercise])
-  const hints = topic.exercise?.hints || []
 
   const switchTab = (next) => {
     setTab(next)
+    if (next === 'learn') onMarkLearn && onMarkLearn()
   }
 
-  const answer = (i) => {
-    if (answered !== null) return
-    setAnswered(i)
-    if (i === topic.quiz.correct) {
-      onXP(5)
-      onFeedback && onFeedback('+5 XP', 'xp')
-    }
-  }
+  useEffect(() => {
+    if (tab === 'learn') onMarkLearn && onMarkLearn()
+  }, [tab, onMarkLearn])
+
+  const tryAuto = useCallback(() => {
+    if (done) return
+    if (autoReady) onTryAutoComplete && onTryAutoComplete()
+  }, [done, autoReady, onTryAutoComplete])
+
+  useEffect(() => {
+    tryAuto()
+  }, [tryAuto])
+
+  useEffect(() => {
+    if (!embedded && !open) return
+    if (!hasExercise) return
+    setCode(topic.exercise?.starter || '')
+    setCases([])
+    setPassed(!!exercisePassed)
+    setFailCount(0)
+    setHintsRevealed(0)
+    setShowSolution(false)
+  }, [embedded, open, hasExercise, topic.exercise?.starter, exercisePassed])
+
+  const testCases = useMemo(() => topic.exercise?.tests || [], [topic.exercise])
 
   const runExercise = async () => {
     if (!hasExercise) return
+    onBumpExerciseAttempt && onBumpExerciseAttempt()
     setRunning(true)
     setCases([])
 
@@ -101,7 +128,7 @@ export default function Topic({
       const res = await new Promise((resolve) => {
         const to = setTimeout(() => {
           try { worker.terminate() } catch {}
-          resolve({ ok: false, error: `Timeout after ${timeoutMs}ms` })
+          resolve({ ok: false, error: 'Timeout after ' + timeoutMs + 'ms' })
         }, timeoutMs)
         worker.onmessage = (e) => {
           clearTimeout(to)
@@ -129,10 +156,37 @@ export default function Topic({
       onXP(25)
       onExercisePass && onExercisePass(topic.id)
       onFeedback && onFeedback('+25 XP · Exercise passed', 'xp')
+      tryAuto()
     } else {
       setFailCount((c) => c + 1)
     }
     setRunning(false)
+  }
+
+  const handleGameWin = (result) => {
+    const total = result?.total || 5
+    const score = result?.score ?? total
+    onGameWin && onGameWin(topic.game, { score, total })
+    const bonus = Math.floor((score / total) * 10)
+    onXP(10 + bonus)
+    onMarkPlay && onMarkPlay()
+    onFeedback && onFeedback('+' + (10 + bonus) + ' XP · Play complete', 'xp')
+    tryAuto()
+  }
+
+  const handleDoComplete = () => {
+    onMarkDo && onMarkDo()
+    onXP(5)
+    onFeedback && onFeedback('+5 XP · Do complete', 'xp')
+    tryAuto()
+  }
+
+  const handleRecallPass = ({ passed, correct, total }) => {
+    if (passed) {
+      onRecallPass && onRecallPass(correct, total)
+      onFeedback && onFeedback('Recall passed · ' + correct + '/' + total, 'xp')
+      tryAuto()
+    }
   }
 
   const handleToggle = () => {
@@ -141,23 +195,34 @@ export default function Topic({
     if (!wasDone) onFeedback && onFeedback('+10 XP · Topic complete', 'xp')
   }
 
+  const showBody = embedded || open
+  const firstExerciseExpanded = (exerciseAttempts || 0) === 0
+
+  const continuity = (label, targetTab) => (
+    <div className="tab-continuity">
+      <button type="button" className="btn-ghost btn-sm" onClick={() => switchTab(targetTab)}>{label}</button>
+    </div>
+  )
+
   return (
-    <div ref={(el) => registerRef && registerRef(topic.id, el)} className={'topic' + (done ? ' done' : '') + (open ? ' open' : '')}>
-      <div className="topic-head" onClick={() => setOpen((o) => !o)}>
-        <div className="topic-check">
-          <svg width="14" height="11" viewBox="0 0 14 11" fill="none"><path d="M1 5L5 9L13 1" stroke="#070711" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" /></svg>
+    <div ref={(el) => registerRef && registerRef(topic.id, el)} className={'topic' + (embedded ? ' topic-embedded' : '') + (done ? ' done' : '') + (showBody ? ' open' : '')}>
+      {!embedded && (
+        <div className="topic-head" onClick={() => setOpen((o) => !o)}>
+          <div className="topic-check">
+            <svg width="14" height="11" viewBox="0 0 14 11" fill="none"><path d="M1 5L5 9L13 1" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" /></svg>
+          </div>
+          <div className="topic-title">{topic.title}</div>
+          <div className="topic-chev" aria-hidden>›</div>
         </div>
-        <div className="topic-title">{topic.title}</div>
-        <div className="topic-chev">▶</div>
-      </div>
-      {open && (
+      )}
+      {showBody && (
         <div className="topic-body">
-          <div className="tabs" role="tablist">
-            <button type="button" role="tab" aria-selected={tab === 'learn'} className={'tab tab-learn' + (tab === 'learn' ? ' active' : '')} onClick={() => switchTab('learn')}><span className="tab-ico">📖</span>Learn</button>
-            <button type="button" role="tab" aria-selected={tab === 'practice'} className={'tab tab-practice' + (tab === 'practice' ? ' active' : '')} onClick={() => switchTab('practice')}><span className="tab-ico">🛠</span>Do</button>
-            {hasGame && <button type="button" role="tab" aria-selected={tab === 'play'} className={'tab tab-play' + (tab === 'play' ? ' active' : '')} onClick={() => switchTab('play')}><span className="tab-ico">🎮</span>Play</button>}
-            {hasExercise && <button type="button" role="tab" aria-selected={tab === 'exercise'} className={'tab tab-ex' + (tab === 'exercise' ? ' active' : '')} onClick={() => switchTab('exercise')}><span className="tab-ico">🧪</span>Exercise</button>}
-            <button type="button" role="tab" aria-selected={tab === 'reinforce'} className={'tab tab-reinforce' + (tab === 'reinforce' ? ' active' : '')} onClick={() => switchTab('reinforce')}><span className="tab-ico">🎯</span>Recall</button>
+          <div className="tabs tabs-underline" role="tablist">
+            <button type="button" role="tab" aria-selected={tab === 'learn'} className={'tab' + (tab === 'learn' ? ' active' : '')} onClick={() => switchTab('learn')}>Learn</button>
+            <button type="button" role="tab" aria-selected={tab === 'practice'} className={'tab' + (tab === 'practice' ? ' active' : '') + (doDone ? ' tab-done' : '')} onClick={() => switchTab('practice')}>Do</button>
+            {hasGame && <button type="button" role="tab" aria-selected={tab === 'play'} className={'tab' + (tab === 'play' ? ' active' : '') + (playDone ? ' tab-done' : '')} onClick={() => switchTab('play')}>Play</button>}
+            {hasExercise && <button type="button" role="tab" aria-selected={tab === 'exercise'} className={'tab' + (tab === 'exercise' ? ' active' : '') + (exDone ? ' tab-done' : '')} onClick={() => switchTab('exercise')}>Exercise</button>}
+            <button type="button" role="tab" aria-selected={tab === 'reinforce'} className={'tab' + (tab === 'reinforce' ? ' active' : '') + (recallDone ? ' tab-done' : '')} onClick={() => switchTab('reinforce')}>Recall</button>
           </div>
 
           <div className={'panel-wrap' + (tab === 'learn' ? ' active' : '')}>
@@ -170,16 +235,14 @@ export default function Topic({
                   </div>
                 )}
                 <p className="lead" dangerouslySetInnerHTML={{ __html: topic.learn }} />
-                {topic.deep && (
-                  <div className="deep-dive" dangerouslySetInnerHTML={{ __html: topic.deep }} />
-                )}
+                {topic.deep && <div className="deep-dive" dangerouslySetInnerHTML={{ __html: topic.deep }} />}
                 {(topic.keyPoints || []).length > 0 && (
                   <ul className="key-points">
                     {topic.keyPoints.map((p, i) => <li key={i}>{p}</li>)}
                   </ul>
                 )}
-                <div className="callout"><span className="callout-label">💡 ANALOGY</span>{topic.analogy}</div>
-                <ResourceCards resources={topic.res} title="Core resources" />
+                <div className="callout"><span className="callout-label">Analogy</span>{topic.analogy}</div>
+                <ResourceCards resources={topic.res} title="Resources for this topic" />
                 <ResourceCards resources={topic.extraResources} title="Go deeper" />
               </div>
             )}
@@ -188,11 +251,9 @@ export default function Topic({
           <div className={'panel-wrap' + (tab === 'practice' ? ' active' : '')}>
             {tab === 'practice' && (
               <div className="panel active">
-                <ul className="steps">{topic.steps.map((s, i) => <li key={i}>{s}</li>)}</ul>
-                {topic.code && <div className="code" dangerouslySetInnerHTML={{ __html: topic.code }} />}
-                {!topic.code && !topic.steps?.length && (
-                  <p className="empty-state">No practice steps for this topic yet. Review the Learn tab.</p>
-                )}
+                <DoActivity topic={topic} completed={doDone} onComplete={handleDoComplete} />
+                {doDone && hasGame && continuity('Now try the game →', 'play')}
+                {doDone && !hasGame && continuity('Lock it in with Recall →', 'reinforce')}
               </div>
             )}
           </div>
@@ -200,7 +261,8 @@ export default function Topic({
           <div className={'panel-wrap' + (tab === 'play' ? ' active' : '')}>
             {tab === 'play' && hasGame && (
               <div className="panel active">
-                <Game type={topic.game} onWin={() => { onGameWin && onGameWin(topic.game); onXP(10); onFeedback && onFeedback('+10 XP · Game', 'xp') }} />
+                <Game type={topic.game} onWin={handleGameWin} />
+                {playDone && continuity('Lock it in →', 'reinforce')}
               </div>
             )}
           </div>
@@ -208,52 +270,22 @@ export default function Topic({
           <div className={'panel-wrap' + (tab === 'exercise' ? ' active' : '')}>
             {tab === 'exercise' && hasExercise && (
               <div className="panel active">
-                <div className="ex-prompt" dangerouslySetInnerHTML={{ __html: topic.exercise.prompt }} />
-                {topic.exercise.formatExample && (
-                  <p className="ex-format"><b>Output format:</b> {topic.exercise.formatExample}</p>
-                )}
-                <textarea className="ex-editor" value={code} onChange={(e) => setCode(e.target.value)} spellCheck={false} aria-label="Exercise code editor" />
-                <div className="ex-actions">
-                  <button type="button" className="btn-action" disabled={running} onClick={runExercise}>{running ? 'Running…' : 'Run tests'}</button>
-                  {hints.length > 0 && (
-                    <button type="button" className="btn-ghost btn-sm" onClick={() => setHintsOpen((o) => !o)}>
-                      {hintsOpen ? 'Hide hints' : 'Show hints'}
-                    </button>
-                  )}
-                  {passed && <div className="ex-pass">✓ All tests passed · +25 XP</div>}
-                </div>
-                {hintsOpen && hints.length > 0 && (
-                  <ul className="ex-hints">
-                    {hints.map((h, i) => <li key={i}>{h}</li>)}
-                  </ul>
-                )}
-                {failCount >= 2 && topic.exercise.solution && (
-                  <div className="ex-solution-block">
-                    {!showSolution ? (
-                      <button type="button" className="btn-ghost btn-sm" onClick={() => setShowSolution(true)}>Show solution</button>
-                    ) : (
-                      <>
-                        <p className="ex-solution-label">Reference solution (study, then try again from scratch):</p>
-                        <pre className="ex-solution-code">{topic.exercise.solution}</pre>
-                      </>
-                    )}
-                  </div>
-                )}
-                {cases.length > 0 && (
-                  <div className="ex-cases">
-                    {cases.map((c, i) => (
-                      <div key={i} className={'ex-case ' + (c.ok ? 'ok' : 'no')}>
-                        <div className="ex-case-head">{c.ok ? '✓' : '✗'} Case {i + 1}</div>
-                        <div className="ex-case-body">
-                          <div><b>Input</b><pre>{String(c.input)}</pre></div>
-                          <div><b>Expected</b><pre>{String(c.expected)}</pre></div>
-                          {c.error ? <div><b>Error</b><pre>{String(c.error)}</pre></div> : <div><b>Output</b><pre>{String(c.output ?? '')}</pre></div>}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <div className="ex-note">Contract: define <b>solve(input)</b> and return a string (unless noted). No imports.</div>
+                <ExercisePanel
+                  topic={topic}
+                  code={code}
+                  setCode={setCode}
+                  running={running}
+                  cases={cases}
+                  passed={passed}
+                  failCount={failCount}
+                  hintsRevealed={hintsRevealed}
+                  setHintsRevealed={setHintsRevealed}
+                  showSolution={showSolution}
+                  setShowSolution={setShowSolution}
+                  onRun={runExercise}
+                  firstExerciseExpanded={firstExerciseExpanded}
+                />
+                {exDone && !recallDone && continuity('Lock it in →', 'reinforce')}
               </div>
             )}
           </div>
@@ -261,29 +293,41 @@ export default function Topic({
           <div className={'panel-wrap' + (tab === 'reinforce' ? ' active' : '')}>
             {tab === 'reinforce' && (
               <div className="panel active">
-                <div className="recall-q">{topic.quiz.q}</div>
-                <div className="opts">
-                  {topic.quiz.opts.map((o, i) => {
-                    let cls = 'opt'
-                    if (answered !== null) {
-                      if (i === topic.quiz.correct) cls += ' correct'
-                      else if (i === answered) cls += ' wrong'
-                    }
-                    return <button key={i} type="button" className={cls} disabled={answered !== null} onClick={() => answer(i)}>{o}</button>
-                  })}
-                </div>
-                {answered !== null && (
-                  <div className={'fb show ' + (answered === topic.quiz.correct ? 'ok' : 'no')}>
-                    {answered === topic.quiz.correct ? '✓ ' + topic.quiz.ok : '✗ ' + topic.quiz.no}
+                <RecallPanel
+                  topic={topic}
+                  completed={recallDone}
+                  onPass={handleRecallPass}
+                  onXP={onXP}
+                />
+                {recallDone && nextTopicLabel && (
+                  <div className="tab-continuity topic-mastered">
+                    <p>Topic mastered.</p>
+                    <button type="button" className="btn-primary btn-sm" onClick={onGoNextTopic}>Next: {nextTopicLabel}</button>
                   </div>
                 )}
               </div>
             )}
           </div>
 
-          <button type="button" className="finish-btn" onClick={handleToggle}>
-            {done ? '✓ Completed (tap to undo)' : 'Complete · +10 XP'}
-          </button>
+          {done ? (
+            <button type="button" className="btn-primary finish-btn done-state" onClick={handleToggle}>
+              Completed (tap to undo)
+            </button>
+          ) : autoReady ? (
+            <p className="topic-auto-complete mono">All tabs complete. Topic marked done.</p>
+          ) : (
+            <div className="manual-complete-wrap">
+              {!showManualComplete ? (
+                <button type="button" className="btn-text manual-complete-link" onClick={() => setShowManualComplete(true)}>
+                  Having trouble? Mark complete anyway
+                </button>
+              ) : (
+                <button type="button" className="btn-primary finish-btn" onClick={handleToggle}>
+                  Mark complete anyway · +10 XP
+                </button>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

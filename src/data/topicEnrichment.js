@@ -1,5 +1,3 @@
-import { stripEmDashes, stripHtmlDashes } from '../utils/text.js'
-
 const WHY = {
   t01: 'Every HTTPS session, bank transfer, and password manager depends on encryption that quantum computers will eventually break.',
   t02: 'Long-lived secrets (health records, state archives) sent under RSA today may already be stored for future decryption.',
@@ -92,7 +90,7 @@ const DEEP_KP = {
   },
   t34: {
     deep: 'Tensor products build multi-qubit state spaces. An n-qubit register has dimension 2^n. Most gates are local (act on one or two qubits) but embed into the full 2^n space. Simulation cost is why classical brute force of 256-bit keys is hard but 40-qubit states strain laptops.',
-    keyPoints: ['n qubits → 2^n amplitudes', 'Exponential state space', 'Classical simulation hits walls near ~40–50 qubits']
+    keyPoints: ['n qubits → 2^n amplitudes', 'Exponential state space', 'Classical simulation hits walls near ~40-50 qubits']
   },
   t35: {
     deep: 'Measurement projects the state onto a basis. Decoherence is entanglement with the environment, effectively leaking which-basis information. T1 (energy relaxation) and T2 (dephasing) times quantify how long superposition survives on hardware.',
@@ -164,32 +162,6 @@ const DEEP_KP = {
   }
 }
 
-const STRING_FIELDS = ['learn', 'deep', 'analogy', 'whyMatters']
-
-function cleanTopicStrings(topic) {
-  STRING_FIELDS.forEach((f) => {
-    if (topic[f]) topic[f] = stripHtmlDashes(topic[f])
-  })
-  if (topic.keyPoints) topic.keyPoints = topic.keyPoints.map(stripEmDashes)
-  if (topic.steps) topic.steps = topic.steps.map(stripEmDashes)
-  if (topic.quiz) {
-    topic.quiz.q = stripEmDashes(topic.quiz.q)
-    topic.quiz.opts = topic.quiz.opts.map(stripEmDashes)
-    topic.quiz.ok = stripEmDashes(topic.quiz.ok)
-    topic.quiz.no = stripEmDashes(topic.quiz.no)
-  }
-  if (topic.flashcards) {
-    topic.flashcards = topic.flashcards.map((fc) => ({
-      q: stripEmDashes(fc.q),
-      a: stripEmDashes(fc.a)
-    }))
-  }
-  if (topic.exercise) {
-    topic.exercise.prompt = stripHtmlDashes(topic.exercise.prompt)
-    if (topic.exercise.hints) topic.exercise.hints = topic.exercise.hints.map(stripEmDashes)
-  }
-}
-
 const EXERCISE_META = {
   t11: {
     formatExample: 'Return two numbers as a space-separated string, e.g. "3 4"',
@@ -221,10 +193,7 @@ const EXERCISE_META = {
 export function enrichAll(curriculum) {
   Object.keys(curriculum).forEach((lv) => {
     const lvData = curriculum[lv]
-    if (lvData.desc) lvData.desc = stripEmDashes(lvData.desc)
-    if (lvData.name) lvData.name = stripEmDashes(lvData.name)
     curriculum[lv].topics.forEach((topic) => {
-      if (topic.title) topic.title = stripEmDashes(topic.title)
       if (WHY[topic.id] && !topic.whyMatters) topic.whyMatters = WHY[topic.id]
       const extra = DEEP_KP[topic.id]
       if (extra) {
@@ -235,13 +204,12 @@ export function enrichAll(curriculum) {
       }
       if (!topic.keyPoints || !topic.keyPoints.length) {
         if (topic.deep) {
-          topic.keyPoints = [stripEmDashes(topic.learn.replace(/<[^>]+>/g, '').slice(0, 120) + '…')]
+          topic.keyPoints = [topic.learn.replace(/<[^>]+>/g, '').slice(0, 120) + '…']
         }
       }
       if (topic.exercise && EXERCISE_META[topic.id]) {
         Object.assign(topic.exercise, EXERCISE_META[topic.id])
       }
-      cleanTopicStrings(topic)
     })
   })
 }

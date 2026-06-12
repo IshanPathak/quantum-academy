@@ -13,7 +13,7 @@ function downloadJson(filename, obj) {
   URL.revokeObjectURL(url)
 }
 
-export default function Dashboard({ state, totals, levelProgress, onImportState }) {
+export default function Dashboard({ state, totals, levelProgress, onImportState, onReset }) {
   const perLevel = useMemo(() => {
     return LORDER.map(lv => {
       const p = levelProgress(lv)
@@ -28,7 +28,7 @@ export default function Dashboard({ state, totals, levelProgress, onImportState 
   return (
     <div className="dash">
       <div className="dash-head">
-        <div className="dash-title">📊 Dashboard</div>
+        <div className="dash-title">Dashboard</div>
         <div className="dash-sub">Your progress snapshot</div>
       </div>
 
@@ -78,6 +78,12 @@ export default function Dashboard({ state, totals, levelProgress, onImportState 
       </div>
 
       <div className="dash-section">
+        <div className="dash-section-title">Settings</div>
+        <p className="dash-note">Reset clears topics, XP, streak, games, exercises, review, and tab progress. Onboarding preference is kept.</p>
+        <button type="button" className="btn-ghost btn-sm" onClick={onReset}>Reset all progress</button>
+      </div>
+
+      <div className="dash-section">
         <div className="dash-section-title">Backup</div>
         <div className="dash-actions">
           <button className="btn-action" onClick={() => downloadJson('quantum-academy-progress.json', state)}>Export progress</button>
@@ -102,7 +108,7 @@ export default function Dashboard({ state, totals, levelProgress, onImportState 
             />
           </label>
         </div>
-        <div className="dash-note">Export/import saves topics, XP, streak, games, exercises, review schedule, settings, and onboarding state (key: qacad_react_v1).</div>
+        <div className="dash-note">Export/import saves topics, XP, streak, games, exercises, tab loop progress, review schedule, settings, and onboarding state (key: qacad_react_v1).</div>
       </div>
     </div>
   )

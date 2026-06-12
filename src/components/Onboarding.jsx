@@ -15,7 +15,7 @@ const SLIDES = [
   },
   {
     title: 'You are ready',
-    body: 'Use the journey map to see all 10 levels. Arrow keys jump between topics in Learn view. Open the glossary anytime. Start with Level 0.'
+    body: 'Open Map to see all 10 levels. Use the sidebar to pick topics. Arrow keys move between topics while you read. Open the glossary anytime. Start with Level 0.'
   }
 ]
 
